@@ -1,0 +1,5 @@
+export { default as IconHome } from './IconHome.vue'
+export { default as IconCategory } from './IconCategory.vue'
+export { default as IconShield } from './IconShield.vue'
+export { default as IconMail } from './IconMail.vue'
+export { default as IconDocument } from './IconDocument.vue'
