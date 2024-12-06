@@ -9,29 +9,36 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      # 1. Checkout du code
       - uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
+      # 2. Configuration de Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'npm'
 
+      # 3. Mise à jour de la version
       - name: Update version
         run: |
           VERSION=$(cat public/version.txt)
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "DEPLOY_ID=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
+      # 4. Installation des dépendances
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
+      # 5. Build de l'application
       - name: Build application
         env:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
-        
+
+      # 6. Préparation des fichiers (compression)
       - name: Prepare files for deployment
         run: |
           cd .output/public
@@ -40,22 +47,89 @@ jobs:
           find . -type f -name "*.css" -exec gzip -9 -k {} \;
           find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
-      - name: Deploy to O2switch via FTP
+      # 7. Déploiement vers le répertoire temporaire
+      - name: Deploy to staging directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          dangerous-clean-slate: true
+          server-dir: /staging_${{ env.DEPLOY_ID }}/
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
-          server-dir: /
           log-level: minimal
 
+      # 8. Création du script de bascule
+      - name: Create switch script
+        run: |
+          echo "<?php
+          \$source = '/staging_${{ env.DEPLOY_ID }}';
+          \$target = '/';
+          
+          // Copier les nouveaux fichiers
+          function recursiveCopy(\$src, \$dst) {
+              \$dir = opendir(\$src);
+              @mkdir(\$dst);
+              while((\$file = readdir(\$dir))) {
+                  if ((\$file != '.') && (\$file != '..')) {
+                      if (is_dir(\$src . '/' . \$file)) {
+                          recursiveCopy(\$src . '/' . \$file, \$dst . '/' . \$file);
+                      } else {
+                          copy(\$src . '/' . \$file, \$dst . '/' . \$file);
+                      }
+                  }
+              }
+              closedir(\$dir);
+          }
+          
+          recursiveCopy(\$source, \$target);
+          
+          // Nettoyer le répertoire de staging
+          function recursiveDelete(\$dir) {
+              if (is_dir(\$dir)) {
+                  \$files = scandir(\$dir);
+                  foreach (\$files as \$file) {
+                      if (\$file != '.' && \$file != '..') {
+                          if (is_dir(\$dir . '/' . \$file)) {
+                              recursiveDelete(\$dir . '/' . \$file);
+                          } else {
+                              unlink(\$dir . '/' . \$file);
+                          }
+                      }
+                  }
+                  rmdir(\$dir);
+              }
+          }
+          
+          recursiveDelete(\$source);
+          echo 'Switch completed successfully';
+          ?>" > switch.php
+
+      # 9. Déploiement du script de bascule
+      - name: Deploy switch script
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./
+          server-dir: /
+          include: |
+            switch.php
+          log-level: minimal
+
+      # 10. Exécution de la bascule
+      - name: Execute switch
+        run: |
+          curl -s https://fdshop.fr/switch.php
+          echo "Switch completed"
+
+      # 11. Message de fin
       - name: Deployment completion message
         run: |
-          echo " Deployment completed successfully!"
-          echo "Version $(cat public/version.txt) has been deployed to fdshop.fr"
+          echo "🚀 Deployment completed successfully!"
+          echo "Version ${{ env.APP_VERSION }} has been deployed to fdshop.fr"
+          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
