@@ -48,28 +48,22 @@ jobs:
             fi
           done
 
-      # 7. Création du répertoire de release
-      - name: Create release directory structure
-        run: |
-          mkdir -p deploy/releases/${{ env.DEPLOY_ID }}
-          cp -r .output/public/* deploy/releases/${{ env.DEPLOY_ID }}/
-          
-      # 8. Déploiement vers le répertoire de release
-      - name: Deploy to release directory
+      # 7. Déploiement du site vers le répertoire de release
+      - name: Deploy site to release directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deploy/
-          server-dir: /
+          local-dir: .output/public/
+          server-dir: /releases/${{ env.DEPLOY_ID }}/
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
           log-level: minimal
 
-      # 9. Création du script de bascule
+      # 8. Création du script de bascule
       - name: Create switch script
         run: |
           echo "<?php
@@ -157,30 +151,30 @@ jobs:
           
           echo \"\\n Deployment completed successfully!\\n\";
           echo \"Current version: \$deployId\\n\";
-          ?>" > deploy/switch.php
+          ?>" > switch.php
 
-      # 10. Déploiement du script de bascule
+      # 9. Déploiement du script de bascule
       - name: Deploy switch script
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deploy/
+          local-dir: ./
           server-dir: /
           include: |
             switch.php
           log-level: minimal
 
-      # 11. Exécution de la bascule
+      # 10. Exécution de la bascule
       - name: Execute switch
         run: |
           curl -s https://filano.dev/switch.php
           echo "Switch completed"
 
-      # 12. Message de fin
+      # 11. Message de fin
       - name: Deployment completion message
         run: |
-          echo "🚀 Deployment completed successfully!"
+          echo " Deployment completed successfully!"
           echo "Version ${{ env.APP_VERSION }} has been deployed to filano.dev"
           echo "Deployment ID: ${{ env.DEPLOY_ID }}"
