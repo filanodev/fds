@@ -46,12 +46,16 @@ jobs:
           find . -type f -name "*.css" -exec gzip -9 -k {} \;
           find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
-      # 7. Créer le répertoire temporaire sur le serveur FTP
+      # 7. Installer lftp
+      - name: Install lftp
+        run: sudo apt-get install -y lftp
+
+      # 8. Créer le répertoire temporaire sur le serveur FTP
       - name: Create temp-deploy directory
         run: |
           lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "mkdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
 
-      # 8. Déployer vers un répertoire temporaire via FTP
+      # 9. Déployer vers un répertoire temporaire via FTP
       - name: Deploy to temporary directory on server
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -66,7 +70,7 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
-      # 9. Basculer la nouvelle version en production
+      # 10. Basculer la nouvelle version en production
       - name: Switch directories via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -81,7 +85,7 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
-      # 10. Supprimer le répertoire temporaire
+      # 11. Supprimer le répertoire temporaire
       - name: Clean up temporary directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -92,7 +96,7 @@ jobs:
           action: delete
           log-level: minimal
 
-      # 11. Message de fin de déploiement
+      # 12. Message de fin de déploiement
       - name: Deployment completion message
         run: |
           echo "Deployment completed successfully!"
