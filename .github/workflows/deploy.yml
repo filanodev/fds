@@ -2,51 +2,178 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [master]
+    branches: [ master ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      # 1. Cloner le dépôt
+      # 1. Checkout du code
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
 
-      # 2. Installer lftp
-      - name: Install lftp
-        run: sudo apt-get update && sudo apt-get install -y lftp
+      # 2. Configuration de Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
 
-      # 3. Créer un répertoire temporaire sur le serveur FTP
-      - name: Create temp-deploy directory
+      # 3. Mise à jour de la version
+      - name: Update version
         run: |
-          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; mkdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
+          VERSION=$(cat public/version.txt)
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "DEPLOY_ID=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
-      # 4. Déployer vers le répertoire temporaire
-      - name: Deploy to temporary directory on server
+      # 4. Installation des dépendances
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      # 5. Build de l'application
+      - name: Build application
+        env:
+          NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
+        run: npm run generate
+
+      # 6. Préparation des fichiers (compression)
+      - name: Prepare files for deployment
+        run: |
+          cd .output/public
+          find . -type f -name "*.html" -exec gzip -9 -k {} \;
+          find . -type f -name "*.js" -exec gzip -9 -k {} \;
+          find . -type f -name "*.css" -exec gzip -9 -k {} \;
+          find . -type f -name "*.svg" -exec gzip -9 -k {} \;
+
+      # 7. Déploiement vers le répertoire de release
+      - name: Deploy to release directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          server-dir: /temp-deploy/
+          server-dir: /releases/${{ env.DEPLOY_ID }}/
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
           log-level: minimal
 
-      # 5. Basculer les fichiers en production
-      - name: Switch directories via FTP
+      # 8. Création du script de bascule
+      - name: Create switch script
         run: |
-          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; mv /temp-deploy/* /; rmdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
+          echo "<?php
+          ini_set('display_errors', 1);
+          error_reporting(E_ALL);
+          set_time_limit(300);
+          
+          \$deployId = '${{ env.DEPLOY_ID }}';
+          \$releasesDir = '/releases';
+          \$currentLink = '/current';
+          \$newRelease = \$releasesDir . '/' . \$deployId;
+          
+          echo \"Starting deployment process...\\n\";
+          
+          // 1. Vérifier si le nouveau release existe
+          if (!is_dir(\$newRelease)) {
+              die(\"Error: New release directory not found: {\$newRelease}\\n\");
+          }
+          echo \" New release found\\n\";
+          
+          // 2. Créer le lien symbolique temporaire
+          \$tempLink = \$currentLink . '_' . \$deployId;
+          @unlink(\$tempLink);
+          
+          if (!symlink(\$newRelease, \$tempLink)) {
+              die(\"Error: Failed to create temporary symlink\\n\");
+          }
+          echo \" Temporary symlink created\\n\";
+          
+          // 3. Faire la bascule atomique
+          if (!@rename(\$tempLink, \$currentLink)) {
+              @unlink(\$tempLink);
+              die(\"Error: Failed to switch symlink\\n\");
+          }
+          echo \" Symlink switched successfully\\n\";
+          
+          // 4. Mettre à jour le .htaccess
+          \$htaccess = <<<EOT
+          <IfModule mod_rewrite.c>
+              RewriteEngine On
+              RewriteBase /
+              
+              // Ne pas rediriger les fichiers qui existent
+              RewriteCond %{REQUEST_FILENAME} !-f
+              
+              // Rediriger vers le répertoire current
+              RewriteRule ^(.*)$ /current/\$1 [QSA,L]
+          </IfModule>
+          EOT;
+          
+          if (!@file_put_contents('.htaccess', \$htaccess)) {
+              echo \"Warning: Failed to update .htaccess\\n\";
+          } else {
+              echo \" .htaccess updated\\n\";
+          }
+          
+          // 5. Nettoyer les anciens releases (garder les 5 derniers)
+          \$releases = glob(\$releasesDir . '/*', GLOB_ONLYDIR);
+          if (\$releases) {
+              usort(\$releases, function(\$a, \$b) {
+                  return filemtime(\$b) - filemtime(\$a);
+              });
+              
+              \$keepCount = 5;
+              \$toDelete = array_slice(\$releases, \$keepCount);
+              
+              foreach (\$toDelete as \$oldRelease) {
+                  if (\$oldRelease != \$newRelease) {
+                      echo \"Cleaning up: {\$oldRelease}\\n\";
+                      recursiveDelete(\$oldRelease);
+                  }
+              }
+              echo \" Old releases cleaned up\\n\";
+          }
+          
+          function recursiveDelete(\$dir) {
+              if (!is_dir(\$dir)) return;
+              \$files = array_diff(scandir(\$dir), array('.', '..'));
+              foreach (\$files as \$file) {
+                  \$path = \$dir . '/' . \$file;
+                  is_dir(\$path) ? recursiveDelete(\$path) : @unlink(\$path);
+              }
+              @rmdir(\$dir);
+          }
+          
+          echo \"\\n Deployment completed successfully!\\n\";
+          echo \"Current version: \$deployId\\n\";
+          ?>" > switch.php
 
-      # 6. Nettoyer le répertoire temporaire
-      - name: Clean up temporary directory
+      # 9. Déploiement du script de bascule
+      - name: Deploy switch script
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./
+          server-dir: /
+          include: |
+            switch.php
+          log-level: minimal
+
+      # 10. Exécution de la bascule
+      - name: Execute switch
         run: |
-          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; rmdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
+          curl -s https://filano.dev/switch.php
+          echo "Switch completed"
 
-      # 7. Message de fin de déploiement
+      # 11. Message de fin
       - name: Deployment completion message
         run: |
-          echo "Deployment completed successfully!"
+          echo " Deployment completed successfully!"
+          echo "Version ${{ env.APP_VERSION }} has been deployed to filano.dev"
+          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
