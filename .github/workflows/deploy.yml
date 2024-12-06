@@ -3,7 +3,7 @@ name: Deploy to O2switch
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   deploy:
@@ -25,11 +25,11 @@ jobs:
       - name: Build project
         run: npm run generate
 
-      - name: Deploy to O2switch
+      - name: Deploy to O2switch via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          server: ftp.cluster014.hosting.ovh.net
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          server-dir: /filano.dev/
+          server-dir: /www/filano.dev/

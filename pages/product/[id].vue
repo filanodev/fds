@@ -8,7 +8,7 @@
             <svg class="h-6 w-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span>Back</span>
+            <span>Retour</span>
           </NuxtLink>
           <h1 class="text-xl font-bold text-gray-900 truncate max-w-md">
             {{ product?.libelle || 'Loading...' }}
@@ -65,7 +65,6 @@
                 <div class="flex items-start justify-between">
                   <div>
                     <h2 class="text-2xl font-bold text-gray-900">{{ product.libelle }}</h2>
-                    <p class="mt-1 text-sm text-gray-500">{{ product.description }}</p>
                   </div>
                   <div class="flex-shrink-0">
                     <button 
@@ -82,35 +81,31 @@
 
                 <!-- Price -->
                 <div class="mt-4">
-                  <p class="text-3xl font-bold text-gray-900">
-                    <span class="text-4xl">π</span> {{ product.price_str || formatPrice(product.price) }}
-                  </p>
-                  <p class="mt-1 text-sm text-gray-500">Livraison gratuite pour les commandes de plus de π 100</p>
-                  <a 
-                    :href="`https://mainnet.piketplace.com/#/product/${product.id}`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="mt-4 w-full inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                  >
-                    Acheter sur Piketplace
-                    <svg class="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </a>
-                </div>
+                  <div class="flex items-center justify-between">
+                    <div class="text-3xl font-bold text-gray-900">π {{ formatPrice(product.price) }}</div>
+                  </div>
 
-                <!-- Seller Info -->
-                <div class="mt-6 pb-6 border-b border-gray-200">
-                  <div class="flex items-center space-x-2">
-                    <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                      <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
+                  <div class="mt-4 space-y-2">
+                    <div class="flex items-center text-sm text-gray-500">
+                      <i class="fas fa-truck mr-2"></i>
+                      <span v-if="product.price >= 100">Free Shipping</span>
+                      <span v-else>Free shipping for orders over π 100</span>
                     </div>
-                    <div>
-                      <p class="text-sm font-medium text-gray-900">{{ product.user.username }}</p>
-                      <p class="text-sm text-gray-500">{{ product.user.email }}</p>
+                    <div class="flex items-center text-sm text-gray-500">
+                      <i class="fas fa-store mr-2"></i>
+                      <span>Sold by {{ product.user.username }}</span>
                     </div>
+                  </div>
+
+                  <div class="mt-6">
+                    <a
+                      :href="`https://mainnet.piketplace.com/#/product/${product.id}`"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg text-center font-medium hover:bg-blue-700 transition-colors inline-block"
+                    >
+                      Buy on Piketplace
+                    </a>
                   </div>
                 </div>
 
@@ -186,12 +181,23 @@ const error = computed(() => productStore.error)
 
 // Format price with thousand separator
 const formatPrice = (price: number): string => {
-  if (!price) return '0.00'
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+  if (!price) return '0'
+  
+  // Convert to string and split on decimal point
+  const [whole, decimal] = price.toString().split('.')
+  
+  // Format the whole number part with thousand separators
+  const formattedWhole = new Intl.NumberFormat('en-US', {
     useGrouping: true
-  }).format(price)
+  }).format(parseInt(whole))
+  
+  // If there's no decimal or it's all zeros, return just the whole number
+  if (!decimal || parseInt(decimal) === 0) {
+    return formattedWhole
+  }
+  
+  // Otherwise, return with the decimal part, trimming trailing zeros
+  return `${formattedWhole}.${decimal.replace(/0+$/, '')}`
 }
 
 const toggleFavorite = () => {
