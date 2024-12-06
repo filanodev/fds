@@ -48,24 +48,14 @@ jobs:
             fi
           done
 
-      # 7. Déploiement du site vers le répertoire de release
-      - name: Deploy site to release directory
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: .output/public/
-          server-dir: /releases/${{ env.DEPLOY_ID }}/
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-          log-level: minimal
-
-      # 8. Création du script de bascule et .htaccess
-      - name: Create switch script and htaccess
+      # 7. Création du répertoire temporaire pour le déploiement
+      - name: Create deployment directory
         run: |
+          mkdir -p deploy
+          # Copier le contenu de .output/public dans deploy/site
+          mkdir -p deploy/site
+          cp -r .output/public/* deploy/site/
+          
           # Création du .htaccess
           echo "<IfModule mod_rewrite.c>
           RewriteEngine On
@@ -78,7 +68,7 @@ jobs:
           
           # Sinon, rediriger vers current
           RewriteRule ^(.*)$ current/$1 [L]
-          </IfModule>" > .htaccess
+          </IfModule>" > deploy/.htaccess
           
           # Création du script switch.php
           echo "<?php
@@ -146,20 +136,30 @@ jobs:
           
           echo \"\\n Deployment completed successfully!\\n\";
           echo \"Current version: \$deployId\\n\";
-          ?>" > switch.php
+          ?>" > deploy/switch.php
 
-      # 9. Déploiement du script de bascule et .htaccess
-      - name: Deploy switch script and htaccess
+      # 8. Déploiement des fichiers de configuration
+      - name: Deploy config files
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
+          local-dir: ./deploy/
           server-dir: /
-          include: |
-            switch.php
-            .htaccess
+          exclude: |
+            site/**
+          log-level: minimal
+
+      # 9. Déploiement du site
+      - name: Deploy site
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./deploy/site/
+          server-dir: /releases/${{ env.DEPLOY_ID }}/
           log-level: minimal
 
       # 10. Exécution de la bascule
