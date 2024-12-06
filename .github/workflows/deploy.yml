@@ -44,23 +44,32 @@ jobs:
       - name: Deploy to O2switch via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          server: filano.dev
+          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          server-dir: /
+          dangerous-clean-slate: true
 
-      - name: Verify deployment
+      - name: Wait for deployment to propagate
         run: |
           echo "Waiting for deployment to propagate..."
           sleep 30
-          VERSION=$(cat public/version.txt)
-          DEPLOYED_VERSION=$(curl -s https://filano.dev/version.txt || echo "Failed to fetch")
-          echo "Local version: $VERSION"
+
+      - name: Verify deployment
+        run: |
+          # Get local version
+          LOCAL_VERSION=$(cat public/version.txt)
+          echo "Local version: $LOCAL_VERSION"
+          
+          # Try to get the deployed version from the runtime config
+          DEPLOYED_VERSION=$(curl -s https://fdshop.fr/_payload.json | jq -r '.config.public.version')
           echo "Deployed version: $DEPLOYED_VERSION"
-          if [ "$VERSION" = "$DEPLOYED_VERSION" ]; then
-            echo " Deployment successful!"
+          
+          # Compare versions
+          if [ "$LOCAL_VERSION" = "$DEPLOYED_VERSION" ]; then
+            echo "Deployment verified successfully!"
+            exit 0
           else
-            echo " Deployment verification failed!"
+            echo "Deployment verification failed!"
             exit 1
           fi
