@@ -154,21 +154,11 @@
 </template>
 
 <script setup lang="ts">
-import { useHead } from '#imports'
-import { ref, onMounted } from 'vue'
+import { useHead, useRuntimeConfig } from '#imports'
+import { computed } from 'vue'
 
-const version = ref('1.0.0')
-
-onMounted(async () => {
-  try {
-    const response = await fetch('/version.txt')
-    if (response.ok) {
-      version.value = await response.text()
-    }
-  } catch (error) {
-    console.error('Failed to fetch version:', error)
-  }
-})
+const config = useRuntimeConfig()
+const version = computed(() => config.public.version)
 
 useHead({
   title: 'About FD Shop - Your Affiliate Shopping Platform',

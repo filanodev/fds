@@ -39,6 +39,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
+      version: process.env.NUXT_PUBLIC_VERSION || '1.0.0',
       apiBase: 'https://mainnet-backend.piketplace.com/api/v1',
       defaultParams: {
         locale: 'en',
