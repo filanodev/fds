@@ -1,37 +1,94 @@
- name: Deploy to temporary directory on server
-uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-with:
-  server: ${{ secrets.FTP_SERVER }}
-  username: ${{ secrets.FTP_USERNAME }}
-  password: ${{ secrets.FTP_PASSWORD }}
-  local-dir: ./.output/public/
-  server-dir: /temp-deploy/
-  exclude: |
-    **/.git*
-    **/.git*/**
-    **/node_modules/**
-  log-level: minimal
+name: Deploy to Production
 
-- name: Switch directories via FTP
-uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-with:
-  server: ${{ secrets.FTP_SERVER }}
-  username: ${{ secrets.FTP_USERNAME }}
-  password: ${{ secrets.FTP_PASSWORD }}
-  local-dir: /temp-deploy/
-  server-dir: /
-  exclude: |
-    **/.git*
-    **/.git*/**
-    **/node_modules/**
-  log-level: minimal
+on:
+  push:
+    branches: [ master ]
 
-- name: Clean up temporary directory
-uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-with:
-  server: ${{ secrets.FTP_SERVER }}
-  username: ${{ secrets.FTP_USERNAME }}
-  password: ${{ secrets.FTP_PASSWORD }}
-  server-dir: /temp-deploy/
-  action: delete
-  log-level: minimal
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Cloner le dépôt
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      # 2. Configurer Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # 3. Mise à jour de la version
+      - name: Update version
+        run: |
+          VERSION=$(cat public/version.txt)
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+
+      # 4. Installer les dépendances
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      # 5. Construire l'application
+      - name: Build application
+        env:
+          NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
+        run: npm run generate
+
+      # 6. Préparer les fichiers pour déploiement
+      - name: Prepare files for deployment
+        run: |
+          cd .output/public
+          find . -type f -name "*.html" -exec gzip -9 -k {} \;
+          find . -type f -name "*.js" -exec gzip -9 -k {} \;
+          find . -type f -name "*.css" -exec gzip -9 -k {} \;
+          find . -type f -name "*.svg" -exec gzip -9 -k {} \;
+
+      # 7. Déployer vers un répertoire temporaire via FTP
+      - name: Deploy to temporary directory on server
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./.output/public/
+          server-dir: /temp-deploy/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+          log-level: minimal
+
+      # 8. Basculer la nouvelle version en production
+      - name: Switch directories via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: /temp-deploy/
+          server-dir: /
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+          log-level: minimal
+
+      # 9. Supprimer le répertoire temporaire
+      - name: Clean up temporary directory
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /temp-deploy/
+          action: delete
+          log-level: minimal
+
+      # 10. Message de fin de déploiement
+      - name: Deployment completion message
+        run: |
+          echo "Deployment completed successfully!"
+          echo "Version $(cat public/version.txt) has been deployed."
