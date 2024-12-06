@@ -39,7 +39,7 @@ jobs:
       - name: Build application
         env:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
-        run: npm run build
+        run: npm run generate
 
       - name: Deploy to O2switch via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -55,6 +55,11 @@ jobs:
           echo "Waiting for deployment to propagate..."
           sleep 30
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: Verify deployment
         run: |
           # Get local version
@@ -62,11 +67,17 @@ jobs:
           echo "Local version: $LOCAL_VERSION"
           
           # Try to get the deployed version from the runtime config
-          DEPLOYED_VERSION=$(curl -s https://fdshop.fr/_payload.json | jq -r '.config.public.version')
+          RESPONSE=$(curl -s 'https://fdshop.fr/info' \
+            -H 'Accept: application/json' \
+            -H 'Accept-Language: en' \
+            --compressed)
+          
+          # Extract version from the HTML response using grep
+          DEPLOYED_VERSION=$(echo "$RESPONSE" | grep -o 'Version [0-9.]*' | grep -o '[0-9.]*' || echo "")
           echo "Deployed version: $DEPLOYED_VERSION"
           
           # Compare versions
-          if [ "$LOCAL_VERSION" = "$DEPLOYED_VERSION" ]; then
+          if [ -n "$DEPLOYED_VERSION" ] && [ "$LOCAL_VERSION" = "$DEPLOYED_VERSION" ]; then
             echo "Deployment verified successfully!"
             exit 0
           else

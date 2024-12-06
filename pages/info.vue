@@ -9,8 +9,8 @@
         <p class="text-xl text-gray-600">
           Your affiliate platform for smart shopping
         </p>
-        <p class="mt-2 text-sm text-gray-500">
-          Version {{ version }}
+        <p class="mt-2 text-sm text-gray-500" id="app-version">
+          Version <span class="font-mono">{{ version || '1.0.0' }}</span>
         </p>
       </div> 
 
@@ -159,6 +159,9 @@ import { computed } from 'vue'
 
 const config = useRuntimeConfig()
 const version = computed(() => config.public.version)
+
+// Log version for debugging
+console.log('Current version:', version.value)
 
 useHead({
   title: 'About FD Shop - Your Affiliate Shopping Platform',
