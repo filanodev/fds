@@ -19,6 +19,15 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
+      - name: Increment version
+        run: |
+          VERSION=$(cat public/version.txt)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="1.0.$NEW_PATCH"
+          echo $NEW_VERSION > public/version.txt
+          echo "New version: $NEW_VERSION"
+
       - name: Install dependencies
         run: npm ci
 
@@ -33,3 +42,18 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
           server-dir: /
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to propagate..."
+          sleep 30
+          VERSION=$(cat public/version.txt)
+          DEPLOYED_VERSION=$(curl -s https://filano.dev/version.txt || echo "Failed to fetch")
+          echo "Local version: $VERSION"
+          echo "Deployed version: $DEPLOYED_VERSION"
+          if [ "$VERSION" = "$DEPLOYED_VERSION" ]; then
+            echo " Deployment successful!"
+          else
+            echo " Deployment verification failed!"
+            exit 1
+          fi

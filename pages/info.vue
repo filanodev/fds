@@ -9,6 +9,9 @@
         <p class="text-xl text-gray-600">
           Your affiliate platform for smart shopping
         </p>
+        <p class="mt-2 text-sm text-gray-500">
+          Version {{ version }}
+        </p>
       </div>
 
       <!-- Main Content -->
@@ -152,18 +155,27 @@
 
 <script setup lang="ts">
 import { useHead } from '#imports'
+import { ref, onMounted } from 'vue'
 
-// Meta tags for SEO
+const version = ref('1.0.0')
+
+onMounted(async () => {
+  try {
+    const response = await fetch('/version.txt')
+    if (response.ok) {
+      version.value = await response.text()
+    }
+  } catch (error) {
+    console.error('Failed to fetch version:', error)
+  }
+})
+
 useHead({
   title: 'About FD Shop - Your Affiliate Shopping Platform',
   meta: [
     {
       name: 'description',
-      content: 'Learn about FD Shop, your trusted affiliate platform for smart shopping. We connect you with the best deals from trusted e-commerce partners.'
-    },
-    {
-      name: 'keywords',
-      content: 'FD Shop, affiliate platform, online shopping, e-commerce, best deals, Piketplace'
+      content: 'Learn more about FD Shop, your trusted affiliate shopping platform.'
     }
   ]
 })
