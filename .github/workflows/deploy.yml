@@ -181,6 +181,6 @@ jobs:
       # 12. Message de fin
       - name: Deployment completion message
         run: |
-          echo " Deployment completed successfully!"
+          echo "🚀 Deployment completed successfully!"
           echo "Version ${{ env.APP_VERSION }} has been deployed to filano.dev"
-          echo "Deployment ID: ${{ env.DEPLOY_ID }}
+          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
