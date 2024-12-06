@@ -12,7 +12,7 @@
         <p class="mt-2 text-sm text-gray-500">
           Version {{ version }}
         </p>
-      </div>
+      </div> 
 
       <!-- Main Content -->
       <div class="space-y-12">
