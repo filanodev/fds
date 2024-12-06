@@ -9,29 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      # 1. Cloner le dépôt
       - uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
+      # 2. Configurer Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'npm'
 
+      # 3. Mise à jour de la version
       - name: Update version
         run: |
           VERSION=$(cat public/version.txt)
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
 
+      # 4. Installer les dépendances
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
+      # 5. Construire l'application
       - name: Build application
         env:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
+      # 6. Préparer les fichiers pour déploiement
       - name: Prepare files for deployment
         run: |
           cd .output/public
@@ -40,11 +46,12 @@ jobs:
           find . -type f -name "*.css" -exec gzip -9 -k {} \;
           find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
-      # Création du répertoire temporaire sur le serveur
+      # 7. Créer le répertoire temporaire sur le serveur FTP
       - name: Create temp-deploy directory
         run: |
-          curl -u ${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }} ftp://${{ secrets.FTP_SERVER }}/mkdir /temp-deploy
+          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "mkdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
 
+      # 8. Déployer vers un répertoire temporaire via FTP
       - name: Deploy to temporary directory on server
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -59,6 +66,7 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
+      # 9. Basculer la nouvelle version en production
       - name: Switch directories via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -73,6 +81,7 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
+      # 10. Supprimer le répertoire temporaire
       - name: Clean up temporary directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -83,6 +92,7 @@ jobs:
           action: delete
           log-level: minimal
 
+      # 11. Message de fin de déploiement
       - name: Deployment completion message
         run: |
           echo "Deployment completed successfully!"
