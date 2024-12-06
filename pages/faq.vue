@@ -6,7 +6,7 @@
           <h1 class="text-2xl md:text-3xl font-bold text-gray-900 mb-8">Frequently Asked Questions</h1>
           
           <div class="space-y-6">
-            <!-- Shopping -->
+            <!-- Shopping --> 
             <section>
               <h2 class="text-lg font-semibold text-gray-900 mb-4">Shopping</h2>
               <div class="space-y-4">

@@ -2,6 +2,23 @@
 export default defineNuxtConfig({
   ssr: true,
   
+  nitro: {
+    prerender: {
+      crawlLinks: true,
+      routes: [
+        '/',
+        '/info',
+        '/cart',
+        '/categories',
+        '/contact',
+        '/privacy',
+        '/terms'
+      ]
+    },
+    minify: true,
+    compressPublicAssets: true
+  },
+
   app: {
     head: {
       title: 'Piketplace - Modern Shopping Experience',
@@ -58,22 +75,10 @@ export default defineNuxtConfig({
     }
   },
 
-  nitro: {
-    compressPublicAssets: true
-  },
-
-  vite: {
-    vue: {
-      script: {
-        defineModel: true,
-        propsDestructure: true
-      }
-    }
-  },
-
   experimental: {
     payloadExtraction: true,
-    inlineSSRStyles: false,
+    inlineSSRStyles: true,
+    renderJsonPayloads: true,
     viewTransition: true
   },
 

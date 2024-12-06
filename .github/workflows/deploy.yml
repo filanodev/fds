@@ -1,17 +1,17 @@
-name: Deploy to O2switch
+name: Deploy to Production
 
 on:
   push:
-    branches:
-      - master
+    branches: [ master ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -19,27 +19,26 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
-      - name: Increment version
-        run: |
-          VERSION=$(cat public/version.txt)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="1.0.$NEW_PATCH"
-          echo $NEW_VERSION > public/version.txt
-          echo "New version: $NEW_VERSION"
-
       - name: Update version
         run: |
           VERSION=$(cat public/version.txt)
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Build application
         env:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
+        
+      - name: Prepare files for deployment
+        run: |
+          cd .output/public
+          find . -type f -name "*.html" -exec gzip -9 -k {} \;
+          find . -type f -name "*.js" -exec gzip -9 -k {} \;
+          find . -type f -name "*.css" -exec gzip -9 -k {} \;
+          find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
       - name: Deploy to O2switch via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -49,40 +48,12 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
           dangerous-clean-slate: true
-
-      - name: Wait for deployment to propagate
-        run: |
-          echo "Waiting for deployment to propagate..."
-          sleep 30
-
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Verify deployment
-        continue-on-error: true
-        run: |
-          # Get local version
-          LOCAL_VERSION=$(cat public/version.txt)
-          echo "Local version: $LOCAL_VERSION"
-          
-          # Try to get the deployed version from the runtime config
-          RESPONSE=$(curl -s --max-time 10 'https://fdshop.fr/info' \
-            -H 'Accept: application/json' \
-            -H 'Accept-Language: en' \
-            --compressed || echo "Failed to fetch")
-          
-          # Extract version from the HTML response using grep
-          DEPLOYED_VERSION=$(echo "$RESPONSE" | grep -o 'Version [0-9.]*' | grep -o '[0-9.]*' || echo "")
-          echo "Deployed version: $DEPLOYED_VERSION"
-          
-          # Compare versions
-          if [ -n "$DEPLOYED_VERSION" ] && [ "$LOCAL_VERSION" = "$DEPLOYED_VERSION" ]; then
-            echo " Deployment verified successfully!"
-          else
-            echo " Could not verify deployment, but continuing anyway..."
-          fi
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+          server-dir: /
+          log-level: minimal
 
       - name: Deployment completion message
         run: |
