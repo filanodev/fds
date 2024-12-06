@@ -7,10 +7,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
       # 1. Checkout du code
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -38,45 +39,89 @@ jobs:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
-      # 6. Préparation des fichiers
-      - name: Prepare deployment package
+      # 6. Compression des fichiers nécessaires
+      - name: Prepare files for deployment
+        run: |
+          cd .output/public
+          for file in $(find . -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.svg" \)); do
+            if [[ ! -f "$file.gz" ]]; then
+              gzip -9 -k "$file"
+            fi
+          done
+
+      # 7. Création et configuration des fichiers de déploiement
+      - name: Generate deployment script
         run: |
           mkdir -p deploy
           mkdir -p deploy/site
           cp -r .output/public/* deploy/site/
           
+          # Génération du .htaccess
           echo "<IfModule mod_rewrite.c>
           RewriteEngine On
           RewriteBase /
+          
+          # Si le fichier ou le dossier existe, ne rien faire
           RewriteCond %{REQUEST_FILENAME} -f [OR]
           RewriteCond %{REQUEST_FILENAME} -d
           RewriteRule ^ - [L]
+          
+          # Sinon, rediriger vers current
           RewriteRule ^(.*)$ /current/$1 [L]
           </IfModule>" > deploy/.htaccess
-          
+
+          # Génération du fichier switch.php
           echo "<?php
-          // Script de bascule
+          ini_set('display_errors', 1);
+          error_reporting(E_ALL);
+
+          \$baseDir = __DIR__;
+          \$releasesDir = \$baseDir . '/releases';
+          \$currentLink = \$baseDir . '/current';
           \$deployId = '${{ env.DEPLOY_ID }}';
-          \$releasesDir = __DIR__ . '/releases';
-          \$currentLink = __DIR__ . '/current';
           \$newRelease = \$releasesDir . '/' . \$deployId;
 
-          if (!is_dir(\$releasesDir)) mkdir(\$releasesDir, 0755, true);
-          if (!is_dir(\$newRelease)) mkdir(\$newRelease, 0755, true);
-
-          // Copier les fichiers dans le nouveau dossier
-          \$siteDir = __DIR__ . '/site';
-          shell_exec(\"cp -r \$siteDir/* \$newRelease/\");
-
-          // Mettre à jour le lien symbolique
-          if (is_link(\$currentLink)) unlink(\$currentLink);
+          echo \"Starting deployment process...\\n\";
+          
+          if (!is_dir(\$releasesDir)) {
+              mkdir(\$releasesDir, 0755, true);
+              echo \"Created releases directory: \$releasesDir\\n\";
+          }
+          
+          if (!is_dir(\$newRelease)) {
+              mkdir(\$newRelease, 0755, true);
+              echo \"Created new release directory: \$newRelease\\n\";
+          }
+          
+          echo \"Copying files...\\n\";
+          shell_exec(\"cp -r \$baseDir/site/* \$newRelease/\");
+          
+          if (is_link(\$currentLink)) {
+              unlink(\$currentLink);
+              echo \"Removed old symbolic link\\n\";
+          }
           symlink(\$newRelease, \$currentLink);
+          echo \"Updated current link\\n\";
+          
+          // Cleanup old releases
+          \$releases = array_diff(scandir(\$releasesDir), ['.', '..']);
+          if (count(\$releases) > 3) {
+              usort(\$releases, function (\$a, \$b) use (\$releasesDir) {
+                  return filemtime(\$releasesDir . '/' . \$b) - filemtime(\$releasesDir . '/' . \$a);
+              });
+              \$toDelete = array_slice(\$releases, 3);
+              foreach (\$toDelete as \$oldRelease) {
+                  \$oldReleasePath = \$releasesDir . '/' . \$oldRelease;
+                  shell_exec(\"rm -rf \$oldReleasePath\");
+                  echo \"Deleted old release: \$oldRelease\\n\";
+              }
+          }
 
-          echo 'Deployment successful!';
+          echo \"Deployment completed successfully\\n\";
           ?>" > deploy/switch.php
 
-      # 7. Déploiement des fichiers
-      - name: Deploy all files
+      # 8. Déploiement des fichiers
+      - name: Deploy to server
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -86,8 +131,9 @@ jobs:
           server-dir: /
           log-level: minimal
 
-      # 8. Instructions pour terminer la bascule
-      - name: Notify about deployment switch
+      # 9. Message de fin
+      - name: Deployment completion message
         run: |
-          echo "Visit 'https://filano.dev/switch.php' to complete the deployment."
-          echo "Current version: ${{ env.APP_VERSION }}"
+          echo "Deployment completed successfully!"
+          echo "Version ${{ env.APP_VERSION }} deployed to filano.dev"
+          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
