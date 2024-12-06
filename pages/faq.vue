@@ -15,7 +15,7 @@
                   <p class="text-gray-600 leading-relaxed">
                     Browse products, add items to your cart, and proceed to checkout. You'll need to create an account or sign in to complete your purchase.
                   </p>
-                </div>
+                </div> 
 
                 <div class="bg-gray-50 rounded-xl p-6">
                   <h3 class="font-medium text-gray-900 mb-2">What payment methods are accepted?</h3>
