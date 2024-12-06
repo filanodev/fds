@@ -12,7 +12,7 @@
                 v-for="item in cartItems" 
                 :key="item.id"
                 class="flex space-x-4"
-              >
+              > 
                 <!-- Product Image --> 
                 <div class="w-24 h-24 flex-shrink-0 rounded-xl bg-gray-100 overflow-hidden">
                   <img 
