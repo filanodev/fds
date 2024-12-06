@@ -9,12 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. Checkout du code
+      # 1. Cloner le dépôt
       - uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
-      # 2. Configuration de Node.js
+      # 2. Configurer Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
@@ -26,19 +26,18 @@ jobs:
         run: |
           VERSION=$(cat public/version.txt)
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "DEPLOY_ID=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
 
-      # 4. Installation des dépendances
+      # 4. Installer les dépendances
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
-      # 5. Build de l'application
+      # 5. Construire l'application
       - name: Build application
         env:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
-      # 6. Préparation des fichiers (compression)
+      # 6. Préparer les fichiers pour déploiement
       - name: Prepare files for deployment
         run: |
           cd .output/public
@@ -47,83 +46,49 @@ jobs:
           find . -type f -name "*.css" -exec gzip -9 -k {} \;
           find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
-      # 7. Déploiement vers le répertoire de release
-      - name: Deploy to release directory
+      # 7. Déployer vers un répertoire temporaire via FTP
+      - name: Deploy to temporary directory on server
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          server-dir: /releases/${{ env.DEPLOY_ID }}/
+          server-dir: /temp-deploy
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
           log-level: minimal
 
-      # 8. Création du script de bascule
-      - name: Create switch script
-        run: |
-          echo "<?php
-          // Activer l'affichage des erreurs
-          ini_set('display_errors', 1);
-          error_reporting(E_ALL);
-          
-          // Vérifier les permissions
-          echo \"Checking permissions...\\n\";
-          \$testDir = '/releases';
-          if (!file_exists(\$testDir)) {
-              if (!@mkdir(\$testDir, 0755, true)) {
-                  echo \"Cannot create directory: \$testDir\\n\";
-                  echo \"Error: \" . error_get_last()['message'] . \"\\n\";
-              } else {
-                  echo \"Created directory: \$testDir\\n\";
-              }
-          }
-          
-          // Tester les liens symboliques
-          echo \"Testing symlinks...\\n\";
-          \$testLink = \$testDir . '/test_link';
-          if (@symlink(__FILE__, \$testLink)) {
-              echo \"Symlink created successfully\\n\";
-              @unlink(\$testLink);
-          } else {
-              echo \"Cannot create symlinks\\n\";
-              echo \"Error: \" . error_get_last()['message'] . \"\\n\";
-          }
-          
-          // Afficher les informations du serveur
-          echo \"\\nServer Information:\\n\";
-          echo \"PHP version: \" . phpversion() . \"\\n\";
-          echo \"User: \" . get_current_user() . \"\\n\";
-          echo \"Working directory: \" . getcwd() . \"\\n\";
-          echo \"Permissions: \" . substr(sprintf('%o', fileperms(__FILE__)), -4) . \"\\n\";
-          
-          ?>" > switch.php
-
-      # 9. Déploiement du script de bascule
-      - name: Deploy switch script
+      # 8. Basculer la nouvelle version en production
+      - name: Switch directories via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
+          local-dir: /temp-deploy
           server-dir: /
-          include: |
-            switch.php
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
           log-level: minimal
 
-      # 10. Exécution de la bascule
-      - name: Execute switch
-        run: |
-          curl -s https://filano.dev/switch.php
-          echo "Switch completed"
+      # 9. Supprimer le répertoire temporaire
+      - name: Clean up temporary directory
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /temp-deploy
+          action: delete
+          log-level: minimal
 
-      # 11. Message de fin
+      # 10. Message de fin de déploiement
       - name: Deployment completion message
         run: |
-          echo "🚀 Deployment completed successfully!"
-          echo "Version ${{ env.APP_VERSION }} has been deployed to fdshop.fr"
-          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
+          echo "Deployment completed successfully!"
+          echo "Version $(cat public/version.txt) has been deployed."
