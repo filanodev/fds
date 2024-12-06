@@ -42,29 +42,34 @@ jobs:
       - name: Prepare files for deployment
         run: |
           cd .output/public
-          # Compression des fichiers seulement si non compressés
           for file in $(find . -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.svg" \)); do
             if [[ ! -f "$file.gz" ]]; then
               gzip -9 -k "$file"
             fi
           done
 
-      # 7. Déploiement vers le répertoire de release
+      # 7. Création du répertoire de release
+      - name: Create release directory structure
+        run: |
+          mkdir -p deploy/releases/${{ env.DEPLOY_ID }}
+          cp -r .output/public/* deploy/releases/${{ env.DEPLOY_ID }}/
+          
+      # 8. Déploiement vers le répertoire de release
       - name: Deploy to release directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./.output/public/
-          server-dir: /releases/${{ env.DEPLOY_ID }}/
+          local-dir: ./deploy/
+          server-dir: /
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
           log-level: minimal
 
-      # 8. Création du script de bascule
+      # 9. Création du script de bascule
       - name: Create switch script
         run: |
           echo "<?php
@@ -106,11 +111,11 @@ jobs:
           <IfModule mod_rewrite.c>
               RewriteEngine On
               RewriteBase /
-              	
-              // Ne pas rediriger les fichiers qui existent
+              
+              # Ne pas rediriger les fichiers qui existent
               RewriteCond %{REQUEST_FILENAME} !-f
-              	
-              // Rediriger vers le répertoire current
+              
+              # Rediriger vers le répertoire current
               RewriteRule ^(.*)$ /current/\$1 [QSA,L]
           </IfModule>
           EOT;
@@ -152,30 +157,30 @@ jobs:
           
           echo \"\\n Deployment completed successfully!\\n\";
           echo \"Current version: \$deployId\\n\";
-          ?>" > switch.php
+          ?>" > deploy/switch.php
 
-      # 9. Déploiement du script de bascule
+      # 10. Déploiement du script de bascule
       - name: Deploy switch script
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
+          local-dir: ./deploy/
           server-dir: /
           include: |
             switch.php
           log-level: minimal
 
-      # 10. Exécution de la bascule
+      # 11. Exécution de la bascule
       - name: Execute switch
         run: |
           curl -s https://filano.dev/switch.php
           echo "Switch completed"
 
-      # 11. Message de fin
+      # 12. Message de fin
       - name: Deployment completion message
         run: |
           echo " Deployment completed successfully!"
           echo "Version ${{ env.APP_VERSION }} has been deployed to filano.dev"
-          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
+          echo "Deployment ID: ${{ env.DEPLOY_ID }}
