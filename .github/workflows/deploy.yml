@@ -1,4 +1,4 @@
-- name: Deploy to temporary directory on server
+ name: Deploy to temporary directory on server
 uses: SamKirkland/FTP-Deploy-Action@v4.3.4
 with:
   server: ${{ secrets.FTP_SERVER }}
