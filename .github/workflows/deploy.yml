@@ -43,7 +43,7 @@ jobs:
         run: |
           cd .output/public
           # Compression des fichiers seulement si non compressés
-          for file in $(find . -type f -name "*.html" -or -name "*.js" -or -name "*.css" -or -name "*.svg"); do
+          for file in $(find . -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.svg" \)); do
             if [[ ! -f "$file.gz" ]]; then
               gzip -9 -k "$file"
             fi
@@ -121,7 +121,7 @@ jobs:
               echo \" .htaccess updated\\n\";
           }
           
-          // 5. Nettoyer les anciens releases (garder les 5 derniers)
+          // 5. Nettoyer les anciens releases (garder les 3 derniers)
           \$releases = glob(\$releasesDir . '/*', GLOB_ONLYDIR);
           if (\$releases) {
               usort(\$releases, function(\$a, \$b) {
