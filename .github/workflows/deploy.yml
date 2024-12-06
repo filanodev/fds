@@ -38,14 +38,16 @@ jobs:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
-      # 6. Préparation des fichiers (compression)
+      # 6. Préparation des fichiers (compression uniquement si nécessaire)
       - name: Prepare files for deployment
         run: |
           cd .output/public
-          find . -type f -name "*.html" -exec gzip -9 -k {} \;
-          find . -type f -name "*.js" -exec gzip -9 -k {} \;
-          find . -type f -name "*.css" -exec gzip -9 -k {} \;
-          find . -type f -name "*.svg" -exec gzip -9 -k {} \;
+          # Compression des fichiers seulement si non compressés
+          for file in $(find . -type f -name "*.html" -or -name "*.js" -or -name "*.css" -or -name "*.svg"); do
+            if [[ ! -f "$file.gz" ]]; then
+              gzip -9 -k "$file"
+            fi
+          done
 
       # 7. Déploiement vers le répertoire de release
       - name: Deploy to release directory
@@ -104,10 +106,10 @@ jobs:
           <IfModule mod_rewrite.c>
               RewriteEngine On
               RewriteBase /
-              
+              	
               // Ne pas rediriger les fichiers qui existent
               RewriteCond %{REQUEST_FILENAME} !-f
-              
+              	
               // Rediriger vers le répertoire current
               RewriteRule ^(.*)$ /current/\$1 [QSA,L]
           </IfModule>
@@ -126,7 +128,7 @@ jobs:
                   return filemtime(\$b) - filemtime(\$a);
               });
               
-              \$keepCount = 5;
+              \$keepCount = 3;
               \$toDelete = array_slice(\$releases, \$keepCount);
               
               foreach (\$toDelete as \$oldRelease) {
