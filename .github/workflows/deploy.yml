@@ -67,7 +67,7 @@ jobs:
           RewriteRule ^ - [L]
           
           # Sinon, rediriger vers current
-          RewriteRule ^(.*)$ current/$1 [L]
+          RewriteRule ^(.*)$ /current/$1 [L]
           </IfModule>" > deploy/.htaccess
           
           # Création du script switch.php
