@@ -63,9 +63,24 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
-      # 8. Création du script de bascule
-      - name: Create switch script
+      # 8. Création du script de bascule et .htaccess
+      - name: Create switch script and htaccess
         run: |
+          # Création du .htaccess
+          echo "<IfModule mod_rewrite.c>
+          RewriteEngine On
+          RewriteBase /
+          
+          # Si le fichier/dossier existe, ne rien faire
+          RewriteCond %{REQUEST_FILENAME} -f [OR]
+          RewriteCond %{REQUEST_FILENAME} -d
+          RewriteRule ^ - [L]
+          
+          # Sinon, rediriger vers current
+          RewriteRule ^(.*)$ current/$1 [L]
+          </IfModule>" > .htaccess
+          
+          # Création du script switch.php
           echo "<?php
           ini_set('display_errors', 1);
           error_reporting(E_ALL);
@@ -100,27 +115,7 @@ jobs:
           }
           echo \" Symlink switched successfully\\n\";
           
-          // 4. Mettre à jour le .htaccess
-          \$htaccess = <<<EOT
-          <IfModule mod_rewrite.c>
-              RewriteEngine On
-              RewriteBase /
-              
-              # Ne pas rediriger les fichiers qui existent
-              RewriteCond %{REQUEST_FILENAME} !-f
-              
-              # Rediriger vers le répertoire current
-              RewriteRule ^(.*)$ /current/\$1 [QSA,L]
-          </IfModule>
-          EOT;
-          
-          if (!@file_put_contents('.htaccess', \$htaccess)) {
-              echo \"Warning: Failed to update .htaccess\\n\";
-          } else {
-              echo \" .htaccess updated\\n\";
-          }
-          
-          // 5. Nettoyer les anciens releases (garder les 3 derniers)
+          // 4. Nettoyer les anciens releases (garder les 3 derniers)
           \$releases = glob(\$releasesDir . '/*', GLOB_ONLYDIR);
           if (\$releases) {
               usort(\$releases, function(\$a, \$b) {
@@ -153,8 +148,8 @@ jobs:
           echo \"Current version: \$deployId\\n\";
           ?>" > switch.php
 
-      # 9. Déploiement du script de bascule
-      - name: Deploy switch script
+      # 9. Déploiement du script de bascule et .htaccess
+      - name: Deploy switch script and htaccess
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -164,6 +159,7 @@ jobs:
           server-dir: /
           include: |
             switch.php
+            .htaccess
           log-level: minimal
 
       # 10. Exécution de la bascule
