@@ -66,46 +66,113 @@ jobs:
       - name: Create switch script
         run: |
           echo "<?php
+          set_time_limit(300);
+          ini_set('memory_limit', '512M');
+          
           \$source = '/staging_${{ env.DEPLOY_ID }}';
           \$target = '/';
+          \$excluded = array('.', '..', '.htaccess', 'switch.php');
           
-          // Copier les nouveaux fichiers
-          function recursiveCopy(\$src, \$dst) {
-              \$dir = opendir(\$src);
-              @mkdir(\$dst);
-              while((\$file = readdir(\$dir))) {
-                  if ((\$file != '.') && (\$file != '..')) {
-                      if (is_dir(\$src . '/' . \$file)) {
-                          recursiveCopy(\$src . '/' . \$file, \$dst . '/' . \$file);
-                      } else {
-                          copy(\$src . '/' . \$file, \$dst . '/' . \$file);
-                      }
-                  }
+          function copyFile(\$src, \$dst) {
+              if (@copy(\$src, \$dst)) {
+                  return true;
               }
-              closedir(\$dir);
+              return false;
           }
           
-          recursiveCopy(\$source, \$target);
+          function atomicCopy(\$src, \$dst) {
+              \$temp = \$dst . '.tmp';
+              if (copyFile(\$src, \$temp)) {
+                  if (rename(\$temp, \$dst)) {
+                      return true;
+                  }
+                  @unlink(\$temp);
+              }
+              return false;
+          }
           
-          // Nettoyer le répertoire de staging
+          function ensureDirectoryExists(\$dir) {
+              if (!is_dir(\$dir)) {
+                  @mkdir(\$dir, 0755, true);
+              }
+          }
+          
+          function listFiles(\$dir, \$prefix = '') {
+              \$result = array();
+              \$files = @scandir(\$dir);
+              if (!\$files) return \$result;
+              
+              foreach (\$files as \$file) {
+                  if (in_array(\$file, \$excluded)) continue;
+                  \$path = \$dir . '/' . \$file;
+                  \$relativePath = \$prefix . \$file;
+                  
+                  if (is_dir(\$path)) {
+                      \$result = array_merge(
+                          \$result,
+                          listFiles(\$path, \$relativePath . '/')
+                      );
+                  } else {
+                      \$result[] = \$relativePath;
+                  }
+              }
+              return \$result;
+          }
+          
+          header('Content-Type: text/plain');
+          header('X-Accel-Buffering: no');
+          
+          echo \"Starting deployment process...\\n\";
+          ob_flush();
+          flush();
+          
+          \$files = listFiles(\$source);
+          \$total = count(\$files);
+          \$current = 0;
+          
+          foreach (\$files as \$file) {
+              \$current++;
+              \$srcPath = \$source . '/' . \$file;
+              \$dstPath = \$target . '/' . \$file;
+              
+              ensureDirectoryExists(dirname(\$dstPath));
+              
+              if (atomicCopy(\$srcPath, \$dstPath)) {
+                  echo \"[\$current/\$total] Copied: \$file\\n\";
+              } else {
+                  echo \"[\$current/\$total] Failed to copy: \$file\\n\";
+              }
+              
+              ob_flush();
+              flush();
+              usleep(10000); // Petit délai pour éviter la surcharge
+          }
+          
+          // Nettoyage du répertoire de staging en arrière-plan
+          echo \"Cleaning up staging directory...\\n\";
           function recursiveDelete(\$dir) {
-              if (is_dir(\$dir)) {
-                  \$files = scandir(\$dir);
-                  foreach (\$files as \$file) {
-                      if (\$file != '.' && \$file != '..') {
-                          if (is_dir(\$dir . '/' . \$file)) {
-                              recursiveDelete(\$dir . '/' . \$file);
-                          } else {
-                              unlink(\$dir . '/' . \$file);
-                          }
-                      }
+              if (!is_dir(\$dir)) return;
+              \$files = array_diff(scandir(\$dir), array('.', '..'));
+              
+              foreach (\$files as \$file) {
+                  \$path = \$dir . '/' . \$file;
+                  if (is_dir(\$path)) {
+                      recursiveDelete(\$path);
+                  } else {
+                      @unlink(\$path);
                   }
-                  rmdir(\$dir);
               }
+              @rmdir(\$dir);
           }
           
-          recursiveDelete(\$source);
-          echo 'Switch completed successfully';
+          // Lancer le nettoyage en arrière-plan sur les systèmes Unix
+          if (function_exists('exec')) {
+              exec(sprintf('nohup php -r \\'recursiveDelete(\\"%s\\");\' > /dev/null 2>&1 &', \$source));
+          } else {
+              recursiveDelete(\$source);
+          }
+          
+          echo \"Deployment completed successfully\\n\";
           ?>" > switch.php
 
       # 9. Déploiement du script de bascule
