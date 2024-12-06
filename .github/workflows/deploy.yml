@@ -7,7 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       # 1. Checkout du code
       - uses: actions/checkout@v3
@@ -38,139 +38,45 @@ jobs:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
-      # 6. Préparation des fichiers (compression uniquement si nécessaire)
-      - name: Prepare files for deployment
-        run: |
-          cd .output/public
-          for file in $(find . -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" -o -name "*.svg" \)); do
-            if [[ ! -f "$file.gz" ]]; then
-              gzip -9 -k "$file"
-            fi
-          done
-
-      # 7. Création du répertoire temporaire pour le déploiement
-      - name: Create deployment directory
+      # 6. Préparation des fichiers
+      - name: Prepare deployment package
         run: |
           mkdir -p deploy
-          # Copier le contenu de .output/public dans deploy/site
           mkdir -p deploy/site
           cp -r .output/public/* deploy/site/
           
-          # Création du .htaccess
           echo "<IfModule mod_rewrite.c>
           RewriteEngine On
           RewriteBase /
-          
-          # Si le fichier/dossier existe, ne rien faire
           RewriteCond %{REQUEST_FILENAME} -f [OR]
           RewriteCond %{REQUEST_FILENAME} -d
           RewriteRule ^ - [L]
-          
-          # Sinon, rediriger vers current
           RewriteRule ^(.*)$ /current/$1 [L]
           </IfModule>" > deploy/.htaccess
           
-          # Création du script switch.php
           echo "<?php
-          ini_set('display_errors', 1);
-          error_reporting(E_ALL);
-          set_time_limit(300);
-          
+          // Script de bascule
           \$deployId = '${{ env.DEPLOY_ID }}';
-          \$releasesDir = '/releases';
-          \$currentLink = '/current';
+          \$releasesDir = __DIR__ . '/releases';
+          \$currentLink = __DIR__ . '/current';
           \$newRelease = \$releasesDir . '/' . \$deployId;
-          
-          echo \"Starting deployment process...\\n\";
-          
-          // 1. Vérifier si le nouveau release existe
-          if (!is_dir(\$newRelease)) {
-              die(\"Error: New release directory not found: {\$newRelease}\\n\");
-          }
-          echo \" New release found\\n\";
-          
-          // 2. Créer le lien symbolique temporaire
-          \$tempLink = \$currentLink . '_' . \$deployId;
-          @unlink(\$tempLink);
-          
-          // Supprimer current s'il existe
-          if (file_exists(\$currentLink)) {
-              if (is_link(\$currentLink)) {
-                  @unlink(\$currentLink);
-              } else {
-                  recursiveDelete(\$currentLink);
-              }
-          }
-          
-          // Créer le lien symbolique
-          if (!symlink(\$newRelease, \$tempLink)) {
-              die(\"Error: Failed to create temporary symlink\\n\");
-          }
-          echo \" Temporary symlink created\\n\";
-          
-          // 3. Faire la bascule atomique
-          if (!@rename(\$tempLink, \$currentLink)) {
-              @unlink(\$tempLink);
-              // Si rename échoue, essayer de copier les fichiers
-              if (!is_dir(\$currentLink)) {
-                  mkdir(\$currentLink, 0755, true);
-              }
-              recursiveCopy(\$newRelease, \$currentLink);
-              echo \" Files copied (fallback method)\\n\";
-          } else {
-              echo \" Symlink switched successfully\\n\";
-          }
-          
-          // 4. Nettoyer les anciens releases (garder les 3 derniers)
-          \$releases = glob(\$releasesDir . '/*', GLOB_ONLYDIR);
-          if (\$releases) {
-              usort(\$releases, function(\$a, \$b) {
-                  return filemtime(\$b) - filemtime(\$a);
-              });
-              
-              \$keepCount = 3;
-              \$toDelete = array_slice(\$releases, \$keepCount);
-              
-              foreach (\$toDelete as \$oldRelease) {
-                  if (\$oldRelease != \$newRelease) {
-                      echo \"Cleaning up: {\$oldRelease}\\n\";
-                      recursiveDelete(\$oldRelease);
-                  }
-              }
-              echo \" Old releases cleaned up\\n\";
-          }
-          
-          function recursiveDelete(\$dir) {
-              if (!is_dir(\$dir)) return;
-              \$files = array_diff(scandir(\$dir), array('.', '..'));
-              foreach (\$files as \$file) {
-                  \$path = \$dir . '/' . \$file;
-                  is_dir(\$path) ? recursiveDelete(\$path) : @unlink(\$path);
-              }
-              @rmdir(\$dir);
-          }
-          
-          function recursiveCopy(\$src, \$dst) {
-              \$dir = opendir(\$src);
-              @mkdir(\$dst);
-              while((\$file = readdir(\$dir)) !== false) {
-                  if ((\$file != '.') && (\$file != '..')) {
-                      if (is_dir(\$src . '/' . \$file)) {
-                          recursiveCopy(\$src . '/' . \$file, \$dst . '/' . \$file);
-                      } else {
-                          copy(\$src . '/' . \$file, \$dst . '/' . \$file);
-                      }
-                  }
-              }
-              closedir(\$dir);
-          }
-          
-          echo \"\\n Deployment completed successfully!\\n\";
-          echo \"Current version: \$deployId\\n\";
+
+          if (!is_dir(\$releasesDir)) mkdir(\$releasesDir, 0755, true);
+          if (!is_dir(\$newRelease)) mkdir(\$newRelease, 0755, true);
+
+          // Copier les fichiers dans le nouveau dossier
+          \$siteDir = __DIR__ . '/site';
+          shell_exec(\"cp -r \$siteDir/* \$newRelease/\");
+
+          // Mettre à jour le lien symbolique
+          if (is_link(\$currentLink)) unlink(\$currentLink);
+          symlink(\$newRelease, \$currentLink);
+
+          echo 'Deployment successful!';
           ?>" > deploy/switch.php
 
-      # 8. Déploiement des fichiers de configuration
-      - name: Deploy config files
+      # 7. Déploiement des fichiers
+      - name: Deploy all files
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -178,30 +84,10 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./deploy/
           server-dir: /
-          exclude: |
-            site/**
           log-level: minimal
 
-      # 9. Déploiement du site
-      - name: Deploy site
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./deploy/site/
-          server-dir: /releases/${{ env.DEPLOY_ID }}/
-          log-level: minimal
-
-      # 10. Exécution de la bascule
-      - name: Execute switch
+      # 8. Instructions pour terminer la bascule
+      - name: Notify about deployment switch
         run: |
-          curl -s https://filano.dev/switch.php
-          echo "Switch completed"
-
-      # 11. Message de fin
-      - name: Deployment completion message
-        run: |
-          echo " Deployment completed successfully!"
-          echo "Version ${{ env.APP_VERSION }} has been deployed to filano.dev"
-          echo "Deployment ID: ${{ env.DEPLOY_ID }}"
+          echo "Visit 'https://filano.dev/switch.php' to complete the deployment."
+          echo "Current version: ${{ env.APP_VERSION }}"
