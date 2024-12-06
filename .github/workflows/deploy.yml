@@ -47,15 +47,15 @@ jobs:
           find . -type f -name "*.css" -exec gzip -9 -k {} \;
           find . -type f -name "*.svg" -exec gzip -9 -k {} \;
 
-      # 7. Déploiement vers le répertoire temporaire
-      - name: Deploy to staging directory
+      # 7. Déploiement vers le répertoire de release
+      - name: Deploy to release directory
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./.output/public/
-          server-dir: /staging_${{ env.DEPLOY_ID }}/
+          server-dir: /releases/${{ env.DEPLOY_ID }}/
           exclude: |
             **/.git*
             **/.git*/**
@@ -69,110 +69,66 @@ jobs:
           set_time_limit(300);
           ini_set('memory_limit', '512M');
           
-          \$source = '/staging_${{ env.DEPLOY_ID }}';
-          \$target = '/';
-          \$excluded = array('.', '..', '.htaccess', 'switch.php');
+          \$newRelease = '/releases/${{ env.DEPLOY_ID }}';
+          \$currentSymlink = '/current';
+          \$publicRoot = '/';
+          \$maxReleases = 5;
           
-          function copyFile(\$src, \$dst) {
-              if (@copy(\$src, \$dst)) {
-                  return true;
-              }
-              return false;
+          // Vérifier si le nouveau release existe
+          if (!is_dir(\$newRelease)) {
+              die('New release directory not found');
           }
           
-          function atomicCopy(\$src, \$dst) {
-              \$temp = \$dst . '.tmp';
-              if (copyFile(\$src, \$temp)) {
-                  if (rename(\$temp, \$dst)) {
-                      return true;
-                  }
-                  @unlink(\$temp);
-              }
-              return false;
+          // Créer le lien symbolique temporaire
+          \$tempLink = \$currentSymlink . '_temp';
+          @unlink(\$tempLink);
+          
+          if (!symlink(\$newRelease, \$tempLink)) {
+              die('Failed to create temporary symlink');
           }
           
-          function ensureDirectoryExists(\$dir) {
-              if (!is_dir(\$dir)) {
-                  @mkdir(\$dir, 0755, true);
+          // Faire la bascule atomique
+          if (!rename(\$tempLink, \$currentSymlink)) {
+              @unlink(\$tempLink);
+              die('Failed to switch symlink');
+          }
+          
+          // Mettre à jour le document root
+          \$htaccess = \"
+          <IfModule mod_rewrite.c>
+              RewriteEngine On
+              RewriteBase /
+              RewriteCond %{REQUEST_FILENAME} !-f
+              RewriteRule ^(.*)$ /current/\$1 [QSA,L]
+          </IfModule>
+          \";
+          
+          file_put_contents(\$publicRoot . '.htaccess', \$htaccess);
+          
+          // Nettoyer les anciens releases
+          \$releases = glob('/releases/*', GLOB_ONLYDIR);
+          usort(\$releases, function(\$a, \$b) {
+              return filemtime(\$b) - filemtime(\$a);
+          });
+          
+          while (count(\$releases) > \$maxReleases) {
+              \$oldRelease = array_pop(\$releases);
+              if (\$oldRelease != \$newRelease) {
+                  recursiveDelete(\$oldRelease);
               }
           }
           
-          function listFiles(\$dir, \$prefix = '') {
-              \$result = array();
-              \$files = @scandir(\$dir);
-              if (!\$files) return \$result;
-              
-              foreach (\$files as \$file) {
-                  if (in_array(\$file, \$excluded)) continue;
-                  \$path = \$dir . '/' . \$file;
-                  \$relativePath = \$prefix . \$file;
-                  
-                  if (is_dir(\$path)) {
-                      \$result = array_merge(
-                          \$result,
-                          listFiles(\$path, \$relativePath . '/')
-                      );
-                  } else {
-                      \$result[] = \$relativePath;
-                  }
-              }
-              return \$result;
-          }
-          
-          header('Content-Type: text/plain');
-          header('X-Accel-Buffering: no');
-          
-          echo \"Starting deployment process...\\n\";
-          ob_flush();
-          flush();
-          
-          \$files = listFiles(\$source);
-          \$total = count(\$files);
-          \$current = 0;
-          
-          foreach (\$files as \$file) {
-              \$current++;
-              \$srcPath = \$source . '/' . \$file;
-              \$dstPath = \$target . '/' . \$file;
-              
-              ensureDirectoryExists(dirname(\$dstPath));
-              
-              if (atomicCopy(\$srcPath, \$dstPath)) {
-                  echo \"[\$current/\$total] Copied: \$file\\n\";
-              } else {
-                  echo \"[\$current/\$total] Failed to copy: \$file\\n\";
-              }
-              
-              ob_flush();
-              flush();
-              usleep(10000); // Petit délai pour éviter la surcharge
-          }
-          
-          // Nettoyage du répertoire de staging en arrière-plan
-          echo \"Cleaning up staging directory...\\n\";
           function recursiveDelete(\$dir) {
               if (!is_dir(\$dir)) return;
               \$files = array_diff(scandir(\$dir), array('.', '..'));
-              
               foreach (\$files as \$file) {
                   \$path = \$dir . '/' . \$file;
-                  if (is_dir(\$path)) {
-                      recursiveDelete(\$path);
-                  } else {
-                      @unlink(\$path);
-                  }
+                  is_dir(\$path) ? recursiveDelete(\$path) : @unlink(\$path);
               }
               @rmdir(\$dir);
           }
           
-          // Lancer le nettoyage en arrière-plan sur les systèmes Unix
-          if (function_exists('exec')) {
-              exec(sprintf('nohup php -r \\'recursiveDelete(\\"%s\\");\' > /dev/null 2>&1 &', \$source));
-          } else {
-              recursiveDelete(\$source);
-          }
-          
-          echo \"Deployment completed successfully\\n\";
+          echo 'Deployment completed successfully';
           ?>" > switch.php
 
       # 9. Déploiement du script de bascule
@@ -191,7 +147,7 @@ jobs:
       # 10. Exécution de la bascule
       - name: Execute switch
         run: |
-          curl -s https://fdshop.fr/switch.php
+          curl -s https://filano.dev/switch.php
           echo "Switch completed"
 
       # 11. Message de fin
