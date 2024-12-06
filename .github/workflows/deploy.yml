@@ -2,12 +2,12 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       # 1. Cloner le dépôt
       - uses: actions/checkout@v3
@@ -37,25 +37,12 @@ jobs:
           NUXT_PUBLIC_VERSION: ${{ env.APP_VERSION }}
         run: npm run generate
 
-      # 6. Préparer les fichiers pour déploiement
-      - name: Prepare files for deployment
-        run: |
-          cd .output/public
-          find . -type f -name "*.html" -exec gzip -9 -k {} \;
-          find . -type f -name "*.js" -exec gzip -9 -k {} \;
-          find . -type f -name "*.css" -exec gzip -9 -k {} \;
-          find . -type f -name "*.svg" -exec gzip -9 -k {} \;
-
-      # 7. Installer lftp
-      - name: Install lftp
-        run: sudo apt-get install -y lftp
-
-      # 8. Créer le répertoire temporaire sur le serveur FTP
+      # 6. Créer un répertoire temporaire sur le serveur FTP
       - name: Create temp-deploy directory
         run: |
-          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "mkdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
+          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; mkdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
 
-      # 9. Déployer vers un répertoire temporaire via FTP
+      # 7. Déployer vers le répertoire temporaire
       - name: Deploy to temporary directory on server
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -70,33 +57,17 @@ jobs:
             **/node_modules/**
           log-level: minimal
 
-      # 10. Basculer la nouvelle version en production
+      # 8. Basculer les fichiers en production
       - name: Switch directories via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: /temp-deploy/
-          server-dir: /
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-          log-level: minimal
+        run: |
+          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; mv /temp-deploy/* /; rmdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
 
-      # 11. Supprimer le répertoire temporaire
+      # 9. Supprimer le répertoire temporaire si nécessaire
       - name: Clean up temporary directory
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /temp-deploy/
-          action: delete
-          log-level: minimal
+        run: |
+          lftp -u ${{ secrets.FTP_USERNAME }},${{ secrets.FTP_PASSWORD }} -e "set ssl:verify-certificate no; rmdir /temp-deploy; quit" ftp://${{ secrets.FTP_SERVER }}
 
-      # 12. Message de fin de déploiement
+      # 10. Message de fin de déploiement
       - name: Deployment completion message
         run: |
           echo "Deployment completed successfully!"
