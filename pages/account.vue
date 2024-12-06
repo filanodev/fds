@@ -9,7 +9,7 @@
             <button 
               class="text-gray-600 hover:text-gray-700"
               @click="logout"
-            >
+            > 
               Logout
             </button>
           </div>
