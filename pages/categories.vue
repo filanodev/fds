@@ -13,7 +13,7 @@
         >
           <div class="p-4 flex items-center space-x-4">
             <div class="flex-shrink-0 w-16 h-16 bg-gray-50 rounded-lg flex items-center justify-center">
-              <div class="text-gray-900">
+              <div class="text-gray-900"> 
                 <i v-for="icon in category.icons.split(';')" 
                    :key="icon" 
                    :class="icon + ' text-2xl'"
