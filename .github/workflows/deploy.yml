@@ -93,6 +93,16 @@ jobs:
           \$tempLink = \$currentLink . '_' . \$deployId;
           @unlink(\$tempLink);
           
+          // Supprimer current s'il existe
+          if (file_exists(\$currentLink)) {
+              if (is_link(\$currentLink)) {
+                  @unlink(\$currentLink);
+              } else {
+                  recursiveDelete(\$currentLink);
+              }
+          }
+          
+          // Créer le lien symbolique
           if (!symlink(\$newRelease, \$tempLink)) {
               die(\"Error: Failed to create temporary symlink\\n\");
           }
@@ -101,9 +111,15 @@ jobs:
           // 3. Faire la bascule atomique
           if (!@rename(\$tempLink, \$currentLink)) {
               @unlink(\$tempLink);
-              die(\"Error: Failed to switch symlink\\n\");
+              // Si rename échoue, essayer de copier les fichiers
+              if (!is_dir(\$currentLink)) {
+                  mkdir(\$currentLink, 0755, true);
+              }
+              recursiveCopy(\$newRelease, \$currentLink);
+              echo \" Files copied (fallback method)\\n\";
+          } else {
+              echo \" Symlink switched successfully\\n\";
           }
-          echo \" Symlink switched successfully\\n\";
           
           // 4. Nettoyer les anciens releases (garder les 3 derniers)
           \$releases = glob(\$releasesDir . '/*', GLOB_ONLYDIR);
@@ -132,6 +148,21 @@ jobs:
                   is_dir(\$path) ? recursiveDelete(\$path) : @unlink(\$path);
               }
               @rmdir(\$dir);
+          }
+          
+          function recursiveCopy(\$src, \$dst) {
+              \$dir = opendir(\$src);
+              @mkdir(\$dst);
+              while((\$file = readdir(\$dir)) !== false) {
+                  if ((\$file != '.') && (\$file != '..')) {
+                      if (is_dir(\$src . '/' . \$file)) {
+                          recursiveCopy(\$src . '/' . \$file, \$dst . '/' . \$file);
+                      } else {
+                          copy(\$src . '/' . \$file, \$dst . '/' . \$file);
+                      }
+                  }
+              }
+              closedir(\$dir);
           }
           
           echo \"\\n Deployment completed successfully!\\n\";
