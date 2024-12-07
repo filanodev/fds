@@ -10,7 +10,7 @@
             <section>
               <h2 class="text-lg font-semibold text-gray-900 mb-4">Our Mission</h2>
               <div class="bg-gray-50 p-6 rounded-xl">
-                <p class="text-gray-600 leading-relaxed">
+                <p class="text-gray-600 leading-relaxed"> 
                   Piketplace is revolutionizing online shopping by connecting buyers with quality products through our innovative affiliate platform. We're committed to creating a seamless, secure, and enjoyable shopping experience for everyone.
                 </p>
               </div>
